@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEON DASH</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&amp;display=swap');
+  
+  body {
+    margin: 0;
+    background: #0a0a1f;
+    color: #fff;
+    font-family: 'Press Start 2P', system-ui;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  
+  #game-container {
+    position: relative;
+    border: 4px solid #00f3ff;
+    box-shadow: 0 0 30px #00f3ff, inset 0 0 30px rgba(0, 243, 255, 0.3);
+  }
+  
+  canvas {
+    display: block;
+    background: #050510;
+    image-rendering: pixelated;
+  }
+  
+  .ui {
+    position: absolute;
+    font-size: 14px;
+    text-shadow: 0 0 10px #00f3ff;
+    pointer-events: none;
+  }
+  
+  #score {
+    top: 20px;
+    left: 20px;
+    color: #00f3ff;
+  }
+  
+  #highscore {
+    top: 20px;
+    right: 20px;
+    color: #ff00aa;
+  }
+  
+  #overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(5, 5, 16, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    text-align: center;
+    pointer-events: auto;
+  }
+  
+  .neon-text {
+    text-shadow: 
+      0 0 5px #fff,
+      0 0 10px #00f3ff,
+      0 0 20px #00f3ff,
+      0 0 40px #00f3ff;
+    font-size: 42px;
+    margin-bottom: 20px;
+    letter-spacing: 4px;
+  }
+  
+  button {
+    font-family: 'Press Start 2P', system-ui;
+    background: transparent;
+    color: #00f3ff;
+    border: 3px solid #00f3ff;
+    padding: 12px 32px;
+    font-size: 14px;
+    margin: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  
+  button:hover {
+    background: #00f3ff;
+    color: #0a0a1f;
+    box-shadow: 0 0 20px #00f3ff;
+  }
+  
+  #leaderboard-modal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #0a0a1f;
+    border: 3px solid #ff00aa;
+    padding: 20px;
+    width: 320px;
+    max-height: 400px;
+    overflow-y: auto;
+    display: none;
+    z-index: 100;
+    box-shadow: 0 0 30px #ff00aa;
+  }
+  
+  .leaderboard-entry {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #333;
+    font-size: 13px;
+  }
+  
+  .leaderboard-entry .name { color: #fff; }
+  .leaderboard-entry .score { color: #00f3ff; }
+  
+  #name-input {
+    background: #111;
+    border: 2px solid #00f3ff;
+    color: #fff;
+    padding: 8px;
+    font-family: 'Press Start 2P', system-ui;
+    font-size: 14px;
+    width: 200px;
+    margin: 10px 0;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="game" width="800" height="450"></canvas>
+  
+  <div id="score" class="ui">SCORE: 00000</div>
+  <div id="highscore" class="ui">BEST: 00000</div>
+  
+  <div id="overlay">
+    <div class="neon-text">NEON DASH</div>
+    <div style="margin-bottom: 20px; font-size: 12px; opacity: 0.8;">ENDLESS RUNNER • NEON EDITION</div>
+    
+    <div style="margin: 20px 0;">
+      <button onclick="startGame()">START GAME</button>
+      <button onclick="showLeaderboard()">LEADERBOARD</button>
+    </div>
+    
+    <div style="font-size: 10px; opacity: 0.6; max-width: 260px; line-height: 1.4;">
+      SPACE / TAP = JUMP &nbsp;&nbsp; DOWN = SLIDE<br>
+      COLLECT ORBS • AVOID OBSTACLES
+    </div>
+  </div>
+  
+  <div id="leaderboard-modal">
+    <h3 style="margin:0 0 15px 0; color:#ff00aa; text-align:center;">GLOBAL LEADERBOARD</h3>
+    <div id="leaderboard-list"></div>
+    
+    <div style="margin-top: 15px; text-align: center;">
+      <input id="name-input" type="text" placeholder="YOUR NAME" maxlength="12">
+      <br>
+      <button onclick="submitScore()" style="padding: 8px 24px; font-size: 12px;">SUBMIT SCORE</button>
+      <button onclick="hideLeaderboard()" style="padding: 8px 24px; font-size: 12px; border-color: #666; color: #666;">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== NEON DASH - Professional Single File Game ====================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha: true });
+
+const W = 800;
+const H = 450;
+const GROUND_Y = 340;
+
+// Game constants
+const INITIAL_SPEED = 4.2;
+const MAX_SPEED = 9.5;
+const DIFFICULTY_RAMP_INTERVAL = 1200; // frames
+const SPEED_INCREMENT = 0.22;
+
+// JSONBin configuration (FREE & CORS friendly)
+// Create your own at jsonbin.io - replace these values
+const JSONBIN_BIN_ID = '667b8c0ce41b4d34e4f0e2a1'; // <-- REPLACE WITH YOUR BIN ID
+const JSONBIN_MASTER_KEY = '$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; // <-- REPLACE WITH YOUR KEY (for write)
+
+// Game state
+let game = {
+  running: false,
+  paused: false,
+  score: 0,
+  speed: INITIAL_SPEED,
+  difficultyTimer: 0,
+  lastSpawn: 0,
+  frame: 0,
+  obstacles: [],
+  orbs: [],
+  particles: [],
+  highScore: parseInt(localStorage.getItem('neonDashHigh') || '0'),
+};
+
+let player = {
+  x: 120,
+  y: GROUND_Y,
+  vy: 0,
+  width: 28,
+  height: 28,
+  sliding: false,
+  slideTimer: 0,
+  invulnerable: 0,
+};
+
+const GRAVITY = 0.72;
+const JUMP_FORCE = -13.5;
+const SLIDE_DURATION = 28;
+
+// Input
+let keys = {};
+let touchStartY = 0;
+let touchStartTime = 0;
+
+function resetGameState() {
+  game.speed = INITIAL_SPEED;
+  game.difficultyTimer = 0;
+  game.lastSpawn = 0;
+  game.frame = 0;
+  game.obstacles = [];
+  game.orbs = [];
+  game.particles = [];
+  game.score = 0;
+  game.running = true;
+  game.paused = false;
+
+  player.y = GROUND_Y;
+  player.vy = 0;
+  player.sliding = false;
+  player.slideTimer = 0;
+  player.invulnerable = 0;
+}
+
+// ==================== INPUT HANDLING ====================
+document.addEventListener('keydown', (e) => {
+  keys[e.key] = true;
+  if (!game.running && (e.key === ' ' || e.key === 'Enter')) {
+    startGame();
+  }
+  if (game.running && e.key === ' ' && !player.sliding) {
+    jump();
+  }
+  if (game.running && (e.key === 'ArrowDown' || e.key === 's')) {
+    slide();
+  }
+  if (e.key.toLowerCase() === 'p' && game.running) {
+    game.paused = !game.paused;
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  keys[e.key] = false;
+});
+
+// Touch controls (mobile)
+canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+function handleTouchStart(e) {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const touchY = e.touches[0].clientY - rect.top;
+  
+  if (!game.running) {
+    startGame();
+    return;
+  }
+  
+  touchStartY = touchY;
+  touchStartTime = Date.now();
+  
+  if (touchY < H * 0.6) {
+    jump();
+  } else {
+    slide();
+  }
+}
+
+function handleTouchEnd(e) {
+  e.preventDefault();
+}
+
+// Mouse click also works
+canvas.addEventListener('click', (e) => {
+  if (!game.running) {
+    startGame();
+    return;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const clickY = e.clientY - rect.top;
+  
+  if (clickY < H * 0.55) {
+    jump();
+  } else {
+    slide();
+  }
+});
+
+function jump() {
+  if (player.y >= GROUND_Y - 5 && !player.sliding) {
+    player.vy = JUMP_FORCE;
+    createParticles(player.x + 14, player.y + 28, 8, '#00f3ff');
+  }
+}
+
+function slide() {
+  if (!player.sliding && player.y >= GROUND_Y - 5) {
+    player.sliding = true;
+    player.slideTimer = SLIDE_DURATION;
+    player.height = 16;
+    createParticles(player.x + 14, player.y + 20, 6, '#ff00aa');
+  }
+}
+
+// ==================== GAME OBJECTS ====================
+function spawnObstacle() {
+  const types = ['block', 'low', 'double'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  
+  let obs = {
+    x: W + 40,
+    y: GROUND_Y,
+    width: 26,
+    height: 42,
+    type: type,
+    passed: false,
+  };
+  
+  if (type === 'low') {
+    obs.y = GROUND_Y - 22;
+    obs.height = 22;
+  } else if (type === 'double') {
+    obs.width = 38;
+  }
+  
+  game.obstacles.push(obs);
+}
+
+function spawnOrb() {
+  game.orbs.push({
+    x: W + 60,
+    y: GROUND_Y - 60 - Math.random() * 110,
+    size: 9,
+    collected: false,
+    pulse: Math.random() * Math.PI * 2,
+  });
+}
+
+function createParticles(x, y, count, color) {
+  for (let i = 0; i < count; i++) {
+    game.particles.push({
+      x: x,
+      y: y,
+      vx: (Math.random() - 0.5) * 4.5,
+      vy: (Math.random() - 0.5) * 4.5 - 1,
+      life: 22 + Math.random() * 18,
+      color: color,
+      size: 2.5 + Math.random() * 2,
+    });
+  }
+}
+
+// ==================== UPDATE ====================
+function updateGame() {
+  if (!game.running || game.paused) return;
+
+  game.frame++;
+  game.difficultyTimer++;
+
+  // Difficulty ramp
+  if (game.difficultyTimer % DIFFICULTY_RAMP_INTERVAL === 0 && game.speed < MAX_SPEED) {
+    game.speed += SPEED_INCREMENT;
+  }
+
+  // Player physics
+  player.vy += GRAVITY;
+  player.y += player.vy;
+
+  // Ground collision
+  if (player.y > GROUND_Y) {
+    player.y = GROUND_Y;
+    player.vy = 0;
+  }
+
+  // Slide timer
+  if (player.sliding) {
+    player.slideTimer--;
+    if (player.slideTimer <= 0) {
+      player.sliding = false;
+      player.height = 28;
+    }
+  }
+
+  if (player.invulnerable > 0) player.invulnerable--;
+
+  // Spawn logic
+  game.lastSpawn++;
+  const spawnRate = Math.max(26, 48 - Math.floor(game.speed * 2.2));
+  
+  if (game.lastSpawn > spawnRate) {
+    spawnObstacle();
+    game.lastSpawn = 0;
+    
+    if (Math.random() < 0.55) {
+      spawnOrb();
+    }
+  }
+
+  // Update obstacles
+  for (let i = game.obstacles.length - 1; i >= 0; i--) {
+    const obs = game.obstacles[i];
+    obs.x -= game.speed;
+
+    // Collision
+    if (!obs.passed && player.invulnerable === 0) {
+      const pHeight = player.sliding ? 16 : 28;
+      const px = player.x;
+      const py = player.y;
+
+      if (px + player.width > obs.x && px < obs.x + obs.width &&
+          py + pHeight > obs.y - obs.height && py < obs.y) {
+        // Hit!
+        createParticles(px + 14, py + 14, 22, '#ff3366');
+        endGame();
+        return;
+      }
+    }
+
+    // Score
+    if (!obs.passed && obs.x + obs.width < player.x) {
+      obs.passed = true;
+      game.score += 12;
+    }
+
+    if (obs.x < -60) game.obstacles.splice(i, 1);
+  }
+
+  // Update orbs
+  for (let i = game.orbs.length - 1; i >= 0; i--) {
+    const orb = game.orbs[i];
+    orb.x -= game.speed * 0.96;
+    orb.pulse += 0.18;
+
+    // Collect
+    if (!orb.collected) {
+      const distX = (player.x + 14) - (orb.x + 4);
+      const distY = (player.y + 14) - orb.y;
+      
+      if (Math.abs(distX) < 28 && Math.abs(distY) < 28) {
+        orb.collected = true;
+        game.score += 35;
+        createParticles(orb.x, orb.y, 14, '#ffff66');
+      }
+    }
+
+    if (orb.x < -30) game.orbs.splice(i, 1);
+  }
+
+  // Particles
+  for (let i = game.particles.length - 1; i >= 0; i--) {
+    const p = game.particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.12;
+    p.life--;
+    if (p.life <= 0) game.particles.splice(i, 1);
+  }
+
+  // Update score display
+  document.getElementById('score').innerHTML = `SCORE: ${String(Math.floor(game.score)).padStart(5, '0')}`;
+}
+
+// ==================== DRAW ====================
+function drawNeonRect(x, y, w, h, color, lineWidth = 3) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = color;
+  ctx.strokeRect(x, y, w, h);
+  
+  ctx.shadowBlur = 4;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, w, h);
+  ctx.shadowBlur = 0;
+}
+
+function draw() {
+  ctx.fillStyle = '#050510';
+  ctx.fillRect(0, 0, W, H);
+
+  // Horizon glow
+  const grad = ctx.createLinearGradient(0, 280, 0, H);
+  grad.addColorStop(0, 'rgba(0, 243, 255, 0.06)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ground line (neon)
+  ctx.strokeStyle = '#00f3ff';
+  ctx.lineWidth = 3;
+  ctx.shadowBlur = 25;
+  ctx.shadowColor = '#00f3ff';
+  ctx.beginPath();
+  ctx.moveTo(0, GROUND_Y + 8);
+  ctx.lineTo(W, GROUND_Y + 8);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0, 243, 255, 0.15)';
+  ctx.lineWidth = 1;
+  for (let x = (game.frame * game.speed * 0.6) % 60; x < W; x += 60) {
+    ctx.beginPath();
+    ctx.moveTo(x, GROUND_Y + 8);
+    ctx.lineTo(x - 180, H);
+    ctx.stroke();
+  }
+
+  // Draw obstacles
+  ctx.shadowBlur = 15;
+  for (const obs of game.obstacles) {
+    ctx.fillStyle = '#ff00aa';
+    ctx.shadowColor = '#ff00aa';
+    
+    if (obs.type === 'low') {
+      ctx.fillRect(obs.x, obs.y - obs.height, obs.width, obs.height);
+      drawNeonRect(obs.x, obs.y - obs.height, obs.width, obs.height, '#ff66cc', 2);
+    } else {
+      ctx.fillRect(obs.x, obs.y - obs.height, obs.width, obs.height);
+      drawNeonRect(obs.x, obs.y - obs.height, obs.width, obs.height, '#ff00aa', 3);
+    }
+  }
+
+  // Draw orbs
+  for (const orb of game.orbs) {
+    if (orb.collected) continue;
+    
+    const pulse = Math.sin(orb.pulse) * 0.4 + 1;
+    const size = orb.size * pulse;
+    
+    ctx.shadowBlur = 22;
+    ctx.shadowColor = '#ffff66';
+    ctx.fillStyle = '#ffff66';
+    ctx.beginPath();
+    ctx.arc(orb.x, orb.y, size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(orb.x - 2, orb.y - 2, size * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+  // Draw particles
+  for (const p of game.particles) {
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = Math.max(0.1, p.life / 35);
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // Draw player (neon cube / ship)
+  ctx.shadowBlur = player.invulnerable > 0 ? 8 : 22;
+  ctx.shadowColor = player.sliding ? '#ff00aa' : '#00f3ff';
+  
+  const pY = player.y;
+  const pH = player.sliding ? 16 : 28;
+  
+  ctx.fillStyle = player.sliding ? '#ff00aa' : '#00f3ff';
+  ctx.fillRect(player.x, pY, player.width, pH);
+  
+  // Inner highlight
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(player.x + 4, pY + 4, player.width - 10, pH - 10);
+  
+  // Neon outline
+  ctx.strokeStyle = player.sliding ? '#ff66cc' : '#00f3ff';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(player.x, pY, player.width, pH);
+  
+  ctx.shadowBlur = 0;
+
+  // Speed lines when fast
+  if (game.speed > 7) {
+    ctx.strokeStyle = 'rgba(0, 243, 255, 0.4)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const lx = 40 + (game.frame * 3 + i * 70) % (W - 80);
+      ctx.beginPath();
+      ctx.moveTo(lx, 120 + i * 40);
+      ctx.lineTo(lx - 55, 120 + i * 40);
+      ctx.stroke();
+    }
+  }
+
+  // Pause text
+  if (game.paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff';
+    ctx.font = '28px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', W/2, H/2);
+    ctx.textAlign = 'left';
+  }
+}
+
+// ==================== GAME LOOP ====================
+function gameLoop() {
+  updateGame();
+  draw();
+  
+  if (game.running) {
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+function startGame() {
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('leaderboard-modal').style.display = 'none';
+  
+  resetGameState();
+  
+  // Update high score display
+  document.getElementById('highscore').innerHTML = `BEST: ${String(game.highScore).padStart(5, '0')}`;
+  
+  gameLoop();
+}
+
+function endGame() {
+  game.running = false;
+  
+  // Save high score
+  if (game.score > game.highScore) {
+    game.highScore = Math.floor(game.score);
+    localStorage.setItem('neonDashHigh', game.highScore);
+  }
+  
+  // Show overlay
+  const overlay = document.getElementById('overlay');
+  overlay.innerHTML = `
+    <div class="neon-text" style="font-size:32px; margin-bottom:8px;">GAME OVER</div>
+    <div style="font-size:18px; color:#00f3ff; margin-bottom:25px;">SCORE: ${Math.floor(game.score)}</div>
+    
+    <div>
+      <button onclick="startGame()">RESTART</button>
+      <button onclick="showLeaderboard(true)">LEADERBOARD</button>
+    </div>
+    
+    <div style="margin-top: 25px; font-size: 11px; opacity: 0.6;">
+      Press SPACE to restart
+    </div>
+  `;
+  overlay.style.display = 'flex';
+  
+  // Auto show leaderboard option after 1.8s
+  setTimeout(() => {
+    if (!game.running) {
+      // nothing
+    }
+  }, 1800);
+}
+
+// ==================== LEADERBOARD (JSONBin) ====================
+async function fetchLeaderboard() {
+  if (!JSONBIN_BIN_ID || JSONBIN_BIN_ID.includes('xxxx')) {
+    return [
+      { name: "NEONKING", score: 12480 },
+      { name: "CYBERCAT", score: 9870 },
+      { name: "PIXELFOX", score: 8540 },
+    ];
+  }
+  
+  try {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_MASTER_KEY }
+    });
+    
+    if (!res.ok) throw new Error('Failed to fetch');
+    
+    const data = await res.json();
+    return data.record.scores || [];
+  } catch (e) {
+    console.warn('Leaderboard fetch failed, using demo data', e);
+    return [
+      { name: "NEONKING", score: 12480 },
+      { name: "CYBERCAT", score: 9870 },
+      { name: "PIXELFOX", score: 8540 },
+    ];
+  }
+}
+
+async function saveToLeaderboard(name, score) {
+  if (!JSONBIN_BIN_ID || JSONBIN_BIN_ID.includes('xxxx')) {
+    alert('Leaderboard is in demo mode. Set up your own JSONBin to enable global scores.');
+    return false;
+  }
+  
+  try {
+    // First fetch current scores
+    const current = await fetchLeaderboard();
+    
+    const newEntry = { name: name.toUpperCase().slice(0,12), score: Math.floor(score) };
+    current.push(newEntry);
+    
+    // Sort and keep top 15
+    current.sort((a, b) => b.score - a.score);
+    const topScores = current.slice(0, 15);
+    
+    // PUT updated bin
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_MASTER_KEY,
+      },
+      body: JSON.stringify({ scores: topScores }),
+    });
+    
+    return res.ok;
+  } catch (e) {
+    console.error('Failed to save score', e);
+    return false;
+  }
+}
+
+async function showLeaderboard(fromGameOver = false) {
+  const modal = document.getElementById('leaderboard-modal');
+  const listEl = document.getElementById('leaderboard-list');
+  listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">LOADING...</div>';
+  
+  modal.style.display = 'block';
+  document.getElementById('overlay').style.display = 'none';
+  
+  const scores = await fetchLeaderboard();
+  
+  listEl.innerHTML = '';
+  
+  if (scores.length === 0) {
+    listEl.innerHTML = '<div style="text-align:center; padding:20px;">No scores yet. Be the first!</div>';
+  } else {
+    scores.slice(0, 10).forEach((entry, idx) => {
+      const div = document.createElement('div');
+      div.className = 'leaderboard-entry';
+      div.innerHTML = `
+        <span class="name">#${idx+1} ${entry.name}</span>
+        <span class="score">${entry.score}</span>
+      `;
+      listEl.appendChild(div);
+    });
+  }
+  
+  // Store context for submit
+  window._pendingScore = fromGameOver ? Math.floor(game.score) : null;
+}
+
+function hideLeaderboard() {
+  document.getElementById('leaderboard-modal').style.display = 'none';
+  if (!game.running) {
+    document.getElementById('overlay').style.display = 'flex';
+  }
+}
+
+async function submitScore() {
+  const nameInput = document.getElementById('name-input');
+  const name = nameInput.value.trim() || 'ANON';
+  const score = window._pendingScore || Math.floor(game.score);
+  
+  const success = await saveToLeaderboard(name, score);
+  
+  if (success) {
+    nameInput.value = '';
+    // Refresh list
+    await showLeaderboard(!!window._pendingScore);
+  } else {
+    alert('Could not submit score. Check your JSONBin configuration.');
+  }
+}
+
+// Keyboard support for name input
+document.addEventListener('keypress', (e) => {
+  const modal = document.getElementById('leaderboard-modal');
+  if (modal.style.display === 'block' && e.key === 'Enter') {
+    submitScore();
+  }
+});
+
+// Boot message
+console.log('%c[NEON DASH] Professional single-file build ready. JSONBin leaderboard configured.', 'color:#00f3ff');
+console.log('%cReplace JSONBIN_BIN_ID and JSONBIN_MASTER_KEY to enable global scores.', 'color:#888');
+</script>
+</body>
+</html>
